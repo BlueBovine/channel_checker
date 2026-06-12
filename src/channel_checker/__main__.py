@@ -38,6 +38,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
@@ -65,7 +66,14 @@ def _get_service(token_file: Path, scopes: list, api: str, version: str):
 
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
+            try:
+                creds.refresh(Request())
+            except RefreshError:
+                token_file.unlink(missing_ok=True)
+                sys.exit(
+                    f"Google OAuth token has been revoked or expired.\n"
+                    f"Deleted {token_file} — re-run the command to re-authenticate."
+                )
         else:
             flow = InstalledAppFlow.from_client_secrets_file(str(YT_CREDS), scopes)
             creds = flow.run_local_server(port=0)
