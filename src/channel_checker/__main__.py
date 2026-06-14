@@ -77,7 +77,12 @@ def _get_service(token_file: Path, scopes: list, api: str, version: str):
                 )
         else:
             flow = InstalledAppFlow.from_client_secrets_file(str(YT_CREDS), scopes)
-            creds = flow.run_console()
+            flow.redirect_uri = "urn:ietf:wg:oauth:2.0:oob"
+            auth_url, _ = flow.authorization_url(prompt="consent")
+            print(f"\nOpen this URL in a browser and paste the authorization code below:\n\n  {auth_url}\n")
+            code = input("Authorization code: ").strip()
+            flow.fetch_token(code=code)
+            creds = flow.credentials
         token_file.write_bytes(pickle.dumps(creds))
 
     return build(api, version, credentials=creds)
