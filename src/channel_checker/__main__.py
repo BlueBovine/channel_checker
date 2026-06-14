@@ -337,7 +337,24 @@ def main():
     if args.auth:
         yt_service()
         tasks_service()
-        print("Authentication successful. Credentials stored.")
+        print("Google API credentials stored.\n")
+        with sync_playwright() as pw:
+            ctx = pw.chromium.launch_persistent_context(
+                user_data_dir=str(CHROME),
+                headless=False,
+                args=["--no-sandbox", "--disable-blink-features=AutomationControlled"],
+                ignore_default_args=["--enable-automation"],
+            )
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            page.goto("https://www.youtube.com", timeout=30_000)
+            page.wait_for_load_state("networkidle", timeout=15_000)
+            if page.query_selector("ytd-masthead button#avatar-btn, ytd-masthead #avatar-btn"):
+                print("Already signed in to YouTube.")
+            else:
+                print("Sign in to YouTube in the browser window, then press Enter here…")
+                input()
+            ctx.close()
+        print("Authentication complete.")
         return
 
     since = datetime.now(timezone.utc) - timedelta(days=args.days)
