@@ -17,8 +17,8 @@ Setup
   4. Download the JSON and save it to:
        ~/.config/channel-checker/credentials.json
 
-  5. First run: omit --headless so you can sign in to Google when the browser
-     opens. The session is persisted for future headless runs.
+  5. First run: follow the URL printed to the terminal, sign in to Google,
+     and paste the authorization code back. The token is saved for future runs.
 
 Usage
 -----
@@ -36,6 +36,7 @@ import pickle
 import re
 import sys
 from datetime import datetime, timedelta, timezone
+from importlib.metadata import version
 from pathlib import Path
 
 from google.auth.exceptions import RefreshError
@@ -76,7 +77,7 @@ def _get_service(token_file: Path, scopes: list, api: str, version: str):
                 )
         else:
             flow = InstalledAppFlow.from_client_secrets_file(str(YT_CREDS), scopes)
-            creds = flow.run_local_server(port=0)
+            creds = flow.run_console()
         token_file.write_bytes(pickle.dumps(creds))
 
     return build(api, version, credentials=creds)
@@ -319,6 +320,8 @@ def main():
                     help="Report findings without updating Tasks")
     ap.add_argument("--debug", action="store_true",
                     help="Print API request and response details")
+    ap.add_argument("-V", "--version", action="version",
+                    version=f"%(prog)s {version('channel-checker')}")
     args = ap.parse_args()
 
     CONFIG.mkdir(parents=True, exist_ok=True)
