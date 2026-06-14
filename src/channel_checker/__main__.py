@@ -35,6 +35,7 @@ import argparse
 import pickle
 import re
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from importlib.metadata import version
 from pathlib import Path
@@ -53,6 +54,19 @@ CHROME = CONFIG / "chrome-profile"
 
 YT_SCOPES = ["https://www.googleapis.com/auth/youtube.readonly"]
 TASKS_SCOPES = ["https://www.googleapis.com/auth/tasks"]
+
+
+# ── Network retry ─────────────────────────────────────────────────────────────
+
+def _retry(fn, retries=3, delay=5):
+    for attempt in range(retries):
+        try:
+            return fn()
+        except OSError as e:
+            if attempt == retries - 1:
+                raise
+            print(f"   Network error ({e}), retrying in {delay}s…")
+            time.sleep(delay)
 
 
 # ── Auth helper ───────────────────────────────────────────────────────────────
@@ -405,13 +419,20 @@ def main():
 
             print(f"▶  {url}")
 
-            cid = channel_id_for(yt, url)
+            try:
+                cid = _retry(lambda: channel_id_for(yt, url))
+            except OSError as e:
+                print(f"   Network error resolving channel ID: {e} — skipping.\n")
+                continue
             if not cid:
                 print("   Could not resolve channel ID — skipping.\n")
                 continue
 
             try:
-                vids = recent_uploads(yt, cid, since)
+                vids = _retry(lambda: recent_uploads(yt, cid, since))
+            except OSError as e:
+                print(f"   Network error fetching uploads: {e} — skipping.\n")
+                continue
             except Exception as e:
                 print(f"   YouTube API error: {e} — skipping.\n")
                 continue
