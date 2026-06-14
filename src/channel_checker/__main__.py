@@ -325,12 +325,20 @@ def main():
                     help="Report findings without updating Tasks")
     ap.add_argument("--debug", action="store_true",
                     help="Print API request and response details")
+    ap.add_argument("-a", "--auth", action="store_true",
+                    help="Authenticate with Google and store credentials, then exit")
     ap.add_argument("-V", "--version", action="version",
                     version=f"%(prog)s {version('channel-checker')}")
     args = ap.parse_args()
 
     CONFIG.mkdir(parents=True, exist_ok=True)
     CHROME.mkdir(parents=True, exist_ok=True)
+
+    if args.auth:
+        yt_service()
+        tasks_service()
+        print("Authentication successful. Credentials stored.")
+        return
 
     since = datetime.now(timezone.utc) - timedelta(days=args.days)
     threshold = args.threshold / 100
