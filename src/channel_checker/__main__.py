@@ -24,14 +24,18 @@ Usage
 -----
   channel-checker [OPTIONS]
 
-  -n / --list       Google Tasks list name (default: "Sailing Channels")
-  -d / --days       Recent window in days (default: 30)
-  -t / --threshold  Percent watched to count as fully watched (default: 95)
-  --headless        Run browser without a visible window
-  --dry-run         Report findings without updating Tasks
+  -n / --list         Google Tasks list name (default: "Sailing Channels")
+  -d / --days         Recent window in days (default: 30)
+  -t / --threshold    Percent watched to count as fully watched (default: 95)
+  -m / --mqtt-config  Path to MQTT config JSON for error notifications
+                      (default: ~/.config/channel-checker/mqtt.json)
+                      Disabled silently if the file does not exist.
+  --headless          Run browser without a visible window
+  --dry-run           Report findings without updating Tasks
 """
 
 import argparse
+import json
 import pickle
 import re
 import sys
@@ -67,6 +71,37 @@ def _retry(fn, retries=3, delay=5):
                 raise
             print(f"   Network error ({e}), retrying in {delay}s…")
             time.sleep(delay)
+
+
+# ── MQTT ─────────────────────────────────────────────────────────────────────
+
+def _load_mqtt_config(path: Path) -> dict | None:
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text())
+    except Exception as e:
+        print(f"Warning: could not load MQTT config from {path}: {e}")
+        return None
+
+
+def _mqtt_publish(cfg: dict, message: str) -> None:
+    try:
+        import paho.mqtt.publish as publish
+        auth = None
+        if cfg.get("username"):
+            auth = {"username": cfg["username"], "password": cfg.get("password", "")}
+        tls = {} if cfg.get("protocol", "mqtt") == "mqtts" else None
+        publish.single(
+            cfg["topic"],
+            payload=message,
+            hostname=cfg["broker"],
+            port=cfg.get("port", 1883),
+            auth=auth,
+            tls=tls,
+        )
+    except Exception as e:
+        print(f"   Warning: MQTT publish failed: {e}")
 
 
 # ── Auth helper ───────────────────────────────────────────────────────────────
@@ -341,12 +376,23 @@ def main():
                     help="Print API request and response details")
     ap.add_argument("-a", "--auth", action="store_true",
                     help="Authenticate with Google and store credentials, then exit")
+    ap.add_argument("-m", "--mqtt-config", default=str(CONFIG / "mqtt.json"),
+                    metavar="FILE",
+                    help="MQTT config JSON for error notifications "
+                         "(default: ~/.config/channel-checker/mqtt.json); "
+                         "disabled if file does not exist")
     ap.add_argument("-V", "--version", action="version",
                     version=f"%(prog)s {version('channel-checker')}")
     args = ap.parse_args()
 
     CONFIG.mkdir(parents=True, exist_ok=True)
     CHROME.mkdir(parents=True, exist_ok=True)
+
+    mqtt_cfg = _load_mqtt_config(Path(args.mqtt_config))
+
+    def publish_error(msg: str) -> None:
+        if mqtt_cfg:
+            _mqtt_publish(mqtt_cfg, msg)
 
     if args.auth:
         yt_service()
@@ -407,7 +453,9 @@ def main():
         if not page.query_selector("ytd-masthead button#avatar-btn, ytd-masthead #avatar-btn"):
             if args.headless:
                 ctx.close()
-                sys.exit("Not logged in to YouTube. Run channel-checker once without --headless to sign in.")
+                msg = "Not logged in to YouTube. Run channel-checker once without --headless to sign in."
+                publish_error(msg)
+                sys.exit(msg)
             print("Sign in to YouTube in the browser, then press Enter…")
             input()
 
@@ -422,7 +470,9 @@ def main():
             try:
                 cid = _retry(lambda: channel_id_for(yt, url))
             except OSError as e:
-                print(f"   Network error resolving channel ID: {e} — skipping.\n")
+                msg = f"Network error resolving channel ID for {url}: {e}"
+                print(f"   {msg} — skipping.\n")
+                publish_error(msg)
                 continue
             if not cid:
                 print("   Could not resolve channel ID — skipping.\n")
@@ -431,10 +481,14 @@ def main():
             try:
                 vids = _retry(lambda: recent_uploads(yt, cid, since))
             except OSError as e:
-                print(f"   Network error fetching uploads: {e} — skipping.\n")
+                msg = f"Network error fetching uploads for {url}: {e}"
+                print(f"   {msg} — skipping.\n")
+                publish_error(msg)
                 continue
             except Exception as e:
-                print(f"   YouTube API error: {e} — skipping.\n")
+                msg = f"YouTube API error for {url}: {e}"
+                print(f"   {msg} — skipping.\n")
+                publish_error(msg)
                 continue
 
             if vids:
@@ -462,7 +516,9 @@ def main():
                 try:
                     progress = watch_progress(page, vp_url, {v["id"] for v in vids}, debug=args.debug)
                 except Exception as e:
-                    print(f"   Browser error: {e} — skipping.\n")
+                    msg = f"Browser error checking {url}: {e}"
+                    print(f"   {msg} — skipping.\n")
+                    publish_error(msg)
                     continue
 
                 skipped = [v for v in vids if v["id"] not in progress]

@@ -28,10 +28,13 @@ playwright install chromium
 
 ### 3. First run (sign in)
 
-Run without `--headless` so you can sign in to Google in the browser that opens. Your session is saved for future headless runs.
+Run `channel-checker -a` to authenticate. This will:
+
+1. Print a Google OAuth URL — open it in a browser, sign in, and paste the code back for each API (YouTube and Tasks).
+2. Open a browser window for you to sign in to YouTube. The session is saved to `~/.config/channel-checker/chrome-profile/`.
 
 ```bash
-channel-checker
+channel-checker -a
 ```
 
 Subsequent runs can use `--headless`.
@@ -41,13 +44,44 @@ Subsequent runs can use `--headless`.
 ```
 channel-checker [OPTIONS]
 
-  -n, --list        Google Tasks list name (default: "Sailing Channels")
-  -d, --days        Check videos published within this many days (default: 30)
-  -t, --threshold   Percent watched to count as fully watched (default: 95)
-  --headless        Run browser without a visible window
-  --dry-run         Report findings without updating Tasks
-  --debug           Print extra detail about API calls and page scraping
+  -n, --list          Google Tasks list name (default: "Sailing Channels")
+  -d, --days          Check videos published within this many days (default: 30)
+  -t, --threshold     Percent watched to count as fully watched (default: 95)
+  -a, --auth          Authenticate with Google and sign in to YouTube, then exit
+  -m, --mqtt-config   Path to MQTT config JSON for error notifications
+                      (default: ~/.config/channel-checker/mqtt.json)
+  -V, --version       Print version and exit
+  --headless          Run browser without a visible window
+  --dry-run           Report findings without updating Tasks
+  --debug             Print extra detail about API calls and page scraping
 ```
+
+## MQTT error notifications (optional)
+
+Errors can be published to an MQTT broker. Create a config file at the default location or pass a custom path with `-m`:
+
+**`~/.config/channel-checker/mqtt.json`**
+```json
+{
+  "broker": "mqtt.example.com",
+  "port": 1883,
+  "protocol": "mqtt",
+  "topic": "channel-checker/errors",
+  "username": "user",
+  "password": "pass"
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `broker` | yes | MQTT broker hostname |
+| `port` | yes | Broker port (typically 1883 for mqtt, 8883 for mqtts) |
+| `protocol` | yes | `mqtt` (plain) or `mqtts` (TLS) |
+| `topic` | yes | Topic to publish errors to |
+| `username` | no | Broker username |
+| `password` | no | Broker password |
+
+If the config file is not present, MQTT publishing is silently disabled.
 
 ## How it works
 
