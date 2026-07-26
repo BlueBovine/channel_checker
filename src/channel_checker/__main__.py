@@ -49,6 +49,7 @@ from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from playwright.sync_api import Page, sync_playwright
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 CONFIG = Path.home() / ".config" / "channel-checker"
 YT_TOKEN = CONFIG / "youtube_token.pickle"
@@ -449,8 +450,17 @@ def main():
 
         # Verify YouTube login
         page.goto("https://www.youtube.com", timeout=30_000)
-        page.wait_for_load_state("networkidle", timeout=15_000)
-        if not page.query_selector("ytd-masthead button#avatar-btn, ytd-masthead #avatar-btn"):
+        try:
+            page.wait_for_load_state("networkidle", timeout=15_000)
+        except PlaywrightTimeoutError:
+            pass
+        logged_in = False
+        for _ in range(10):
+            if page.query_selector("ytd-masthead button#avatar-btn, ytd-masthead #avatar-btn"):
+                logged_in = True
+                break
+            page.wait_for_timeout(2_000)
+        if not logged_in:
             if args.headless:
                 ctx.close()
                 msg = "Not logged in to YouTube. Run channel-checker once without --headless to sign in."
